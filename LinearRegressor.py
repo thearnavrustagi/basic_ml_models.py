@@ -1,68 +1,56 @@
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from sympy import var,symbols, init_printing, diff, linear_eq_to_matrix, solve_linear, Eq
 
-from functools import reduce
+from typing import Callable
 
-def line (initial, data):
-class LinearRegressor(object):
-    """
-    shape of points is (2,N), 
-    0th index has all X cooridinates
-    1st index has all Y coordinates
-    """
-    def __init__ (self, features : np.ndarray, fiting=line , error=lambda x : x**2, ) :
-        # this should be [ [features ... , target ], ] 
-        self.labels = features
-        self.feature_dimension = self.labels.shape[1] - 1
-        self.error = error
+from classifiers import sigmoid
+from losses import cross_entropy_loss
+from optimizers import gradient_descent
 
-        # index 0 is slope
-        # index 1 is intercept
-        self.best_fit_line = (None,None)
+class LogisticRegressor (object):
+    def __init__ (self, classifier : Callable = sigmoid, 
+                  loss : Callable = cross_entropy_loss, 
+                  optimizer : Callable = gradient_descent, 
+                  dimension : int = 2,
+                  weights : np.ndarray = None):
+        self.classifier = classifier
+        self.loss = loss
+        self.optimizer = optimizer
+        self.weights = weights
 
-    def linear_regression (self) -> tuple :
-        # m0 is the constant term
-        symbol_names = [var(f'm{n}') for n in range(self.feature_dimension+1)]
-        feature_names = [symbols(f'x{n+1}') for n in range(self.feature_dimension)]
-        target_symbol = symbols('y')
+        if weights == None:
+            self.weights = np.zeros (dimension)
 
-        eqn = [var*symbol for symbol,var in zip(symbol_names[1:],feature_names)]
-        eqn = self.error(symbol_names[0] + reduce(lambda a,b : a+b, eqn) - target_symbol)
-        print(eqn)
-        
-        eqns = []
-        for symbol in symbol_names:
-            eqns.append(diff(eqn,symbol))
+    def __call__(self, features : np.ndarray, targets : np.ndarray, epochs = 250) -> None:
+        features = np.c_[features, np.ones(features.shape[0])]
 
-        print(eqns)
-        substitutor = {}
-        columns = np.column_stack(self.labels)
-        for i,feature in enumerate(feature_names):
-            substitutor[str(feature)] = sum(columns[i])
-        substitutor[str(target_symbol)] = sum(columns[-1])
+        for _ in range(epochs):
+            for i, (x,y) in enumerate(zip(features, targets)):
+                z = np.dot(self.weights, x)
+                y_pred = self.classifier(z)
+                loss = self.loss(y_pred, y)
+                
+                print(f"{i} / {targets.shape[0]}")
+                print(f"pred : {y_pred}")
+                print(f"loss : {loss}")
 
-        for key, val in substitutor.items():
-            for i,eqn in enumerate(eqns):
-                eqns[i] = eqn.subs(var(key),val)
-        print(eqns)
-        print(*symbol_names)
-        mat = linear_eq_to_matrix(eqns,symbol_names)
-        print(mat)
-        lhs,rhs = tuple((np.array(m).astype(np.float64)) for m in mat)
-
-        print(np.linalg.solve(lhs, rhs))
-            
-
+                self.weights = gradient_descent (self.weights, x,y,y_pred)
 
 
 if __name__ == "__main__":
-    print("testing linear regressor")
-    regressor = LinearRegressor(np.array(np.column_stack([[1,2,3,4,5,6],[0,1,2,2,2,3]])))
-    points = regressor.linear_regression()
-    m,c = points[0], points[1]
+    print("testing logistic regressor")
+    lr = LogisticRegressor ()
+    df = pd.read_csv("dummy.csv")
+    target = df.pop("y").to_numpy()
+    features = df.to_numpy()
 
-    
-    plt.plot(regressor.points[0], regressor.points[1],"o")
-    plt.plot([0,6],[c,m*6+c])
+    lr(features, target)
+    y = []
+    features = np.c_[features, np.ones(features.shape[0])]
+    for x in features:
+        y.append(lr.classifier(np.dot(lr.weights, x)))
+    plt.title("trained regressor")
+    plt.plot(np.column_stack(features)[0],y)
+    plt.plot(np.column_stack(features)[0],target,"o")
     plt.show()
